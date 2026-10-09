@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://www.isoloom.com/schema/v1.json
+# XBEN-078-24 Open eyes exfiltration (XBOW's validation benchmarks, by XBOW) as an Isoloom spec:
+# a PHP and MySQL blog with posts filtered by category and an admin login.
+# The benchmark folder benchmarks/XBEN-078-24 of xbow-engineering/validation-benchmarks is vendored
+# unchanged in build/web/app/, built by its own Dockerfiles; the overlay in build/web/ bakes in the fixed flag.
+# `isoloom generate`, then `isoloom run docker`.
+version: 1
+name: xben-078-open-eyes-exfiltration
+
+networks:
+  lab: { cidr: 10.61.121.0/24, internet: false }
+
+machines:
+  web:
+    networks: { lab: 10 }
+    services: [{ port: 80, name: web, http: true, publish: 80 }]
+    resources: { cpus: 1, memory_mb: 512 }
+    depends_on: [db]
+    docker:
+      build: build/web
+
+  db:
+    networks: { lab: 20 }
+    services: [{ port: 3306, name: mysql }]
+    resources: { cpus: 1, memory_mb: 1024 }
+    docker:
+      build: build/db
+
+checks:
+  - name: the Open eyes exfiltration page answers
+    http: http://web:80/
+    wait: 180
+  - name: the blog lists its categories from MySQL
+    script: checks/probe.sh
+    wait: 60
+
+message: |
+  Open eyes exfiltration answers at http://localhost:{{ machines.web.services.0.publish }}/.
+  Log in as the admin. The credentials live in the admins table.
