@@ -40,12 +40,24 @@ variable "auto_stop_minutes" {
   description = "Shut the VM down (and terminate it) after this long; 0 = never"
 }
 
+variable "expires_at" {
+  type        = string
+  default     = ""
+  description = "When the environment should end, in Unix seconds (empty: no end), as a tag on every resource so a reaper can find what to destroy"
+}
+variable "inputs" {
+  type      = map(string)
+  default   = {}
+  sensitive = true
+}
+
 provider "aws" {
   region = var.region
   default_tags {
     tags = {
       "isoloom:environment" = "xben-078-open-eyes-exfiltration"
       "managed-by"          = "isoloom"
+      "isoloom-expires-at"  = var.expires_at
     }
   }
 }
@@ -179,12 +191,16 @@ resource "terraform_data" "environment" {
     source      = "${path.module}/.isoloom-project.tgz"
     destination = "/tmp/isoloom-project.tgz"
   }
+  provisioner "file" {
+    content     = join("\n", [for k, v in var.inputs : "${k}=${jsonencode(v)}"])
+    destination = "/tmp/isoloom-inputs.env"
+  }
   provisioner "remote-exec" {
     inline = [
       "set -e",
       "tar -xzf /tmp/isoloom-project.tgz -C /opt/isoloom && rm -f /tmp/isoloom-project.tgz",
       "command -v docker >/dev/null || curl -fsSL https://get.docker.com | sudo sh",
-      "cd /opt/isoloom && sudo -E env ISOLOOM_PUBLISH_ADDRESS=0.0.0.0 ISOLOOM_PUBLISH_FIXED=1 docker compose -f .isoloom/docker/compose.yml up -d --build --wait --wait-timeout 900",
+      "cd /opt/isoloom && set -a; . /tmp/isoloom-inputs.env; set +a; sudo -E env ISOLOOM_PUBLISH_ADDRESS=0.0.0.0 ISOLOOM_PUBLISH_FIXED=1 docker compose -f .isoloom/docker/compose.yml up -d --build --wait --wait-timeout 900 $(sudo -E env ISOLOOM_PUBLISH_ADDRESS=0.0.0.0 ISOLOOM_PUBLISH_FIXED=1 docker compose -f .isoloom/docker/compose.yml config --services | grep -vx -e web-init-1) && sudo -E env ISOLOOM_PUBLISH_ADDRESS=0.0.0.0 ISOLOOM_PUBLISH_FIXED=1 docker compose -f .isoloom/docker/compose.yml up --no-deps --exit-code-from web-init-1 web-init-1",
       "sudo mkdir -p /var/lib/isoloom && echo ready | sudo tee /var/lib/isoloom/ready >/dev/null",
     ]
   }

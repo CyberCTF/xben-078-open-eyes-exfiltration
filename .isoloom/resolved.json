@@ -3,7 +3,9 @@
   "resolved_version": 1,
   "name": "xben-078-open-eyes-exfiltration",
   "instance": null,
-  "inputs": [],
+  "inputs": [
+    "CTF_FLAG_MAIN"
+  ],
   "networks": {
     "lab": {
       "cidr": "10.61.121.0/24",
@@ -43,8 +45,12 @@
       "depends_on": [
         "db"
       ],
-      "inputs": [],
-      "volumes": {},
+      "inputs": [
+        "CTF_FLAG_MAIN"
+      ],
+      "volumes": {
+        "ctf": "/ctf"
+      },
       "resources": {
         "cpus": 1,
         "memory_mb": 512,
@@ -133,7 +139,8 @@
       "vagrant": "needs `vm:` on web, db",
       "proxmox": "needs `vm:` on web, db",
       "cloud-vm": "needs `vm:` on web, db",
-      "external": "needs `external:` on web, db"
+      "external": "needs `external:` on web, db",
+      "cloud-services": "left out by `targets:`"
     }
   },
   "checks": {

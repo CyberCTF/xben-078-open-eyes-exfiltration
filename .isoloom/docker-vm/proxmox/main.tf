@@ -53,6 +53,11 @@ variable "proxmox_ssh_address" {
   default     = ""
   description = "The node's SSH address, when the API reports one this machine can't reach"
 }
+variable "ssh_via_node" {
+  type        = bool
+  default     = false
+  description = "Reach the lab VM over SSH through the node (its bridge isn't routable from here)"
+}
 variable "node" {
   type    = string
   default = "pve"
@@ -191,6 +196,17 @@ variable "auto_stop_minutes" {
   description = "Shut the VM down after this many minutes (0: never). Destroy still ends the billing of disks and addresses"
 }
 
+variable "expires_at" {
+  type        = string
+  default     = ""
+  description = "When the environment should end, in Unix seconds (empty: no end), as a tag on every resource so a reaper can find what to destroy"
+}
+variable "inputs" {
+  type      = map(string)
+  default   = {}
+  sensitive = true
+}
+
 # The environment, over SSH: the project, Docker, then the Compose file.
 resource "terraform_data" "environment" {
   triggers_replace = [proxmox_virtual_environment_vm.env.id]
@@ -200,6 +216,10 @@ resource "terraform_data" "environment" {
     user        = "isoloom"
     private_key = file(pathexpand(var.ssh_private_key_file))
     timeout     = "10m"
+    bastion_host        = var.ssh_via_node ? (var.proxmox_ssh_address != "" ? var.proxmox_ssh_address : join("", compact(regex("^https?://(?:\\[([^]]+)\\]|([^/:]+))", var.proxmox_endpoint)))) : null
+    bastion_user        = var.ssh_via_node ? var.proxmox_ssh_username : null
+    bastion_password    = var.ssh_via_node && var.proxmox_ssh_private_key_file == "" ? var.proxmox_password : null
+    bastion_private_key = var.ssh_via_node && var.proxmox_ssh_private_key_file != "" ? file(var.proxmox_ssh_private_key_file) : null
   }
   provisioner "remote-exec" {
     inline = [
@@ -216,12 +236,16 @@ resource "terraform_data" "environment" {
     source      = "${path.module}/.isoloom-project.tgz"
     destination = "/tmp/isoloom-project.tgz"
   }
+  provisioner "file" {
+    content     = join("\n", [for k, v in var.inputs : "${k}=${jsonencode(v)}"])
+    destination = "/tmp/isoloom-inputs.env"
+  }
   provisioner "remote-exec" {
     inline = [
       "set -e",
       "tar -xzf /tmp/isoloom-project.tgz -C /opt/isoloom && rm -f /tmp/isoloom-project.tgz",
       "command -v docker >/dev/null || curl -fsSL https://get.docker.com | sudo sh",
-      "cd /opt/isoloom && sudo -E env ISOLOOM_PUBLISH_ADDRESS=0.0.0.0 ISOLOOM_PUBLISH_FIXED=1 docker compose -f .isoloom/docker/compose.yml up -d --build --wait --wait-timeout 900",
+      "cd /opt/isoloom && set -a; . /tmp/isoloom-inputs.env; set +a; sudo -E env ISOLOOM_PUBLISH_ADDRESS=0.0.0.0 ISOLOOM_PUBLISH_FIXED=1 docker compose -f .isoloom/docker/compose.yml up -d --build --wait --wait-timeout 900 $(sudo -E env ISOLOOM_PUBLISH_ADDRESS=0.0.0.0 ISOLOOM_PUBLISH_FIXED=1 docker compose -f .isoloom/docker/compose.yml config --services | grep -vx -e web-init-1) && sudo -E env ISOLOOM_PUBLISH_ADDRESS=0.0.0.0 ISOLOOM_PUBLISH_FIXED=1 docker compose -f .isoloom/docker/compose.yml up --no-deps --exit-code-from web-init-1 web-init-1",
       "sudo mkdir -p /var/lib/isoloom && echo ready | sudo tee /var/lib/isoloom/ready >/dev/null",
     ]
   }

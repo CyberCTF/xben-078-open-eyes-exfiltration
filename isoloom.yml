@@ -7,6 +7,9 @@
 version: 1
 name: xben-078-open-eyes-exfiltration
 
+# Given by the CyberCTF launcher: this player's flag. Without it the development flag.
+inputs: [CTF_FLAG_MAIN]
+
 networks:
   lab: { cidr: 10.61.121.0/24, internet: false }
 
@@ -16,8 +19,11 @@ machines:
     services: [{ port: 80, name: web, http: true, publish: 80 }]
     resources: { cpus: 1, memory_mb: 512 }
     depends_on: [db]
+    inputs: [CTF_FLAG_MAIN]
+    volumes: { ctf: /ctf }   # the flag, written by ctf/flag.sh at every start
     docker:
       build: build/web
+      init: [ctf/flag.sh]
 
   db:
     networks: { lab: 20 }
